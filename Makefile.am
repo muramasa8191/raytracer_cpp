@@ -39,3 +39,18 @@ raytracer_CPPFLAGS = \
 raytracer_LDFLAGS = /usr/local/opt/llvm/lib/libgomp.dylib
 
 raytracer_LDADD = libraytracer.la
+
+bin_PROGRAMS += cl_raytracer
+cl_raytracer_SOURCES = \
+  stb/stb_image.h \
+  stb/stb_image_write.h \
+  src/raytracer_cl.cpp
+
+cl_raytracer_CPPFLAGS = \
+  -I$(top_srcdir)/src \
+  -I$(top_srcdir)/lib \
+  -lOpenCL
+
+ cl_raytracer_LDFLAGS = -framework opencl
+
+cl_raytracer_LDADD = libraytracer.la
