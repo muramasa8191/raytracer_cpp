@@ -2,6 +2,9 @@
 #include <OpenCL/cl.h>
 #include <sys/stat.h>
 #include <time.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 #include <iostream>
 #include <fstream>
@@ -44,8 +47,8 @@ namespace {
 constexpr char kFilename[] = "cl/raytracer.cl";
 constexpr int kRow = 100;
 constexpr int kCol = 200;
-constexpr int kColorSize = kRow * kCol * 3;
-constexpr int kLocalSize = 50;
+constexpr int kLocalSize = 128;
+constexpr int kColorSize = kRow * kCol * kLocalSize * 3;
 const char kOutputDir[] = "output";
 }  // namespace
 
@@ -71,7 +74,11 @@ void Wait(cl_command_queue cmdQueue) {
 }
 
 int main(int argc, char **args) {
-
+#ifdef _OPENMP
+  double start = omp_get_wtime();
+#else
+  clock_t start = clock();
+#endif
   if (argc < 3) {
     std::cout << "Too few arguments" << std::endl;
   }
@@ -105,8 +112,14 @@ int main(int argc, char **args) {
     h_pixels[i] = 0.0f;
   }
   float *h_results = new float[kColorSize];
-
   size_t data_size = kColorSize * sizeof(float);
+
+  cl_int n_sphere = 2;
+  cl_float4 *h_spheres = new cl_float4[n_sphere];
+  h_spheres[0] = {{0.0, 0.0, -1.0, 0.5}};
+  h_spheres[1] = {{0.0, -100.5, -1.0, 100.0}};
+
+  size_t sphere_size = n_sphere * sizeof(cl_float4);
 
   // create openCL context
   cl_context context = clCreateContext(NULL, 1, &device, NULL, NULL, &status);
@@ -125,12 +138,17 @@ int main(int argc, char **args) {
   // allocate device buffer
   cl_mem d_pixels = clCreateBuffer(context, CL_MEM_READ_ONLY, data_size, NULL, &status);
   if (status != CL_SUCCESS) {
-    std::cout << "clCreateBuffer failed " << status << std::endl;
+    std::cout << "clCreateBuffer(0) failed " << status << std::endl;
+    exit(-1);
+  }
+  cl_mem d_spheres = clCreateBuffer(context, CL_MEM_READ_ONLY, sphere_size, NULL, &status);
+  if (status != CL_SUCCESS) {
+    std::cout << "clCreateBuffer(2) failed " << status << std::endl;
     exit(-1);
   }
   cl_mem d_results = clCreateBuffer(context, CL_MEM_WRITE_ONLY, data_size, NULL, &status);
   if (status != CL_SUCCESS) {
-    std::cout << "clCreateBuffer failed " << status << std::endl;
+    std::cout << "clCreateBuffer(1) failed " << status << std::endl;
     exit(-1);
   }
 
@@ -138,6 +156,11 @@ int main(int argc, char **args) {
   status = clEnqueueWriteBuffer(cmd_queue, d_pixels, CL_FALSE, 0, data_size, h_pixels, 0, NULL, NULL);
   if (status != CL_SUCCESS) {
     std::cout << "clEnqueueWriteBuffer failed " << status << std::endl;
+    exit(-1);
+  }
+  status = clEnqueueWriteBuffer(cmd_queue, d_spheres, CL_FALSE, 0, sphere_size, h_spheres, 0, NULL, NULL);
+  if (status != CL_SUCCESS) {
+    std::cout << "clEnqueueWriteBuffer(2) failed " << status << std::endl;
     exit(-1);
   }
 
@@ -195,20 +218,21 @@ int main(int argc, char **args) {
   status = clSetKernelArg(kernel, 5, sizeof(cl_float3), &vertical);
   cl_float3 origin = {0.0, 0.0, 0.0};
   status = clSetKernelArg(kernel, 6, sizeof(cl_float3), &origin);
-  cl_float4 sphere = {0.0, 0.0, -1.0, 0.5};
-  status = clSetKernelArg(kernel, 7, sizeof(cl_float4), &sphere);
+  status = clSetKernelArg(kernel, 7, sizeof(cl_mem), &d_spheres);
+  status = clSetKernelArg(kernel, 8, sizeof(cl_int), &n_sphere);
+  status = clSetKernelArg(kernel, 9, kLocalSize * sizeof(cl_float3), NULL);
 
   if (status != CL_SUCCESS) {
     std::cout << "clSetKernelArg(3) failed " << status << std::endl;
     exit(-1);
   }
   // enqueue the kernel object for execution
-  size_t global_worker_size[2] = {kCol, kRow};
-  // size_t local_worker_size[3] = {kLocalSize, 1, 1};
+  size_t global_worker_size[3] = {kCol, kRow, kLocalSize};
+  size_t local_worker_size[3] = {kLocalSize, 1, 1};
 
   Wait(cmd_queue);
 
-  status = clEnqueueNDRangeKernel(cmd_queue, kernel, 2, NULL, global_worker_size, NULL, 0, NULL, NULL);
+  status = clEnqueueNDRangeKernel(cmd_queue, kernel, 2, NULL, global_worker_size, local_worker_size, 0, NULL, NULL);
   if (status != CL_SUCCESS) {
     std::cout << "clEnqueueNDRangeKernel failed " << status << std::endl;
     exit(-1);
@@ -228,8 +252,10 @@ int main(int argc, char **args) {
   clReleaseCommandQueue(cmd_queue);
   clReleaseMemObject(d_pixels);
   clReleaseMemObject(d_results);
+  clReleaseMemObject(d_spheres);
 
   delete[] h_pixels;
+  delete[] h_spheres;
 
   Image image(kCol, kRow);
   int i = 0;
@@ -245,6 +271,14 @@ int main(int argc, char **args) {
   }
 
   Write(args[2], image);
-    
+
+#ifdef _OPENMP
+  double end = omp_get_wtime();
+  std::cout << "Done! " << (end - start) * 1000.0 << " msec" << std::endl;
+#else
+  clock_t end = clock();
+  std::cout << "Done: " << (end - start) / float(CLOCKS_PER_SEC) * 1000.0 << " msec" << std::endl;
+#endif
+
   return 0;
 }

@@ -10,23 +10,23 @@
 /* Define to 1 if you have the <inttypes.h> header file. */
 #define HAVE_INTTYPES_H 1
 
-/* Define to 1 if you have the <limits.h> header file. */
-#define HAVE_LIMITS_H 1
-
 /* Define to 1 if you have the <memory.h> header file. */
 #define HAVE_MEMORY_H 1
 
 /* Define to 1 if you have the `memset' function. */
 #define HAVE_MEMSET 1
 
+/* Define to 1 if you have the <omp.h> header file. */
+#define HAVE_OMP_H 1
+
+/* Define to 1 if you have the <OpenCL/cl.h> header file. */
+#define HAVE_OPENCL_CL_H 1
+
 /* Define to 1 if you have the `pow' function. */
 #define HAVE_POW 1
 
 /* Define to 1 if you have the `sqrt' function. */
 #define HAVE_SQRT 1
-
-/* Define to 1 if you have the <stddef.h> header file. */
-#define HAVE_STDDEF_H 1
 
 /* Define to 1 if you have the <stdint.h> header file. */
 #define HAVE_STDINT_H 1

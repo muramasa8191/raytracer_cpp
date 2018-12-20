@@ -49,8 +49,10 @@ cl_raytracer_SOURCES = \
 cl_raytracer_CPPFLAGS = \
   -I$(top_srcdir)/src \
   -I$(top_srcdir)/lib \
-  -lOpenCL
+  -fopenmp
 
- cl_raytracer_LDFLAGS = -framework opencl
+ cl_raytracer_LDFLAGS = \
+   -framework opencl \
+   /usr/local/opt/llvm/lib/libgomp.dylib
 
 cl_raytracer_LDADD = libraytracer.la
