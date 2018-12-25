@@ -45,9 +45,9 @@ using raytracer::Dielectric;
 
 namespace {
 constexpr char kFilename[] = "cl/raytracer.cl";
-constexpr int kRow = 100;
-constexpr int kCol = 200;
-constexpr int kLocalSize = 128;
+constexpr int kRow = 200;
+constexpr int kCol = 400;
+constexpr int kLocalSize = 100;
 constexpr int kColorSize = kRow * kCol * kLocalSize * 3;
 const char kOutputDir[] = "output";
 }  // namespace
@@ -107,19 +107,89 @@ int main(int argc, char **args) {
   }
 
   // allocate host memory
-  float *h_pixels = new float[kColorSize];
-  for (int i = 0, end = kColorSize; i < end; ++i) {
-    h_pixels[i] = 0.0f;
-  }
   float *h_results = new float[kColorSize];
   size_t data_size = kColorSize * sizeof(float);
 
-  cl_int n_sphere = 2;
+  cl_int n_sphere = 488;
   cl_float4 *h_spheres = new cl_float4[n_sphere];
-  h_spheres[0] = {{0.0, 0.0, -1.0, 0.5}};
-  h_spheres[1] = {{0.0, -100.5, -1.0, 100.0}};
+  // h_spheres[0] = {{0.0, 0.0, -1.0, 0.5}};
+  // h_spheres[1] = {{0.0, -100.5, -1.0, 100.0}};
+  // h_spheres[2] = {{1.0, 0.0, -1.0, 0.5}};
+  // h_spheres[3] = {{-1.0, 0.0, -1.0, 0.5}};
+  // h_spheres[4] = {{-1.0, 0.0, -1.0, -0.45}};
+  cl_int *h_types = new cl_int[n_sphere];
+  // h_types[0] = 0;
+  // h_types[1] = 0;
+  // h_types[2] = 1;
+  // h_types[3] = 2;
+  // h_types[4] = 2;
+  cl_float4 *h_materials = new cl_float4[n_sphere];
+  // h_materials[0] = {{0.8, 0.3, 0.3, 0.0}};
+  // h_materials[1] = {{0.8, 0.8, 0.0, 0.0}};
+  // h_materials[2] = {{0.8, 0.6, 0.2, 0.3}};
+  // h_materials[3] = {{1.5, 0.0, 0.0, 0.0}};
+  // h_materials[4] = {{1.5, 0.0, 0.0, 0.0}};
+  int num = 0;
+  h_spheres[num] = {{0.0, -1000.0, 0.0, 1000.0}};
+  h_types[num] = 0;
+  h_materials[num++] = {{0.5, 0.5, 0.5, 1.0}};
+  for (int a = -11; a < 11; ++a) {
+    for (int b = -11; b < 11; ++b) {
+      float choose_mat = drand48();
+      float x = a + 0.9 * drand48();
+      float y = 0.2;
+      float z = b + 0.9 * drand48();
+      float adj[3] = {x - 4.0f, y - 0.2f, z};
+      if (sqrt(adj[0] * adj[0] + adj[1] * adj[1] + adj[2] * adj[2]) > 0.9) {
+        h_spheres[num] = {{x, y, z, 0.2}};
+        if (choose_mat < 0.8) {
+          h_types[num] = 0;
+          h_materials[num] = {{static_cast<float>(drand48() * drand48()),
+                               static_cast<float>(drand48() * drand48()),
+                               static_cast<float>(drand48() * drand48()), 1.0}};
+        } else if (choose_mat < 0.95) {
+          h_types[num] = 1;
+          h_materials[num] = {{static_cast<float>(0.5 + (1.0 + drand48())),
+                               static_cast<float>(0.5 * (1.0 + drand48())),
+                               static_cast<float>(0.5 * (1.0 + drand48())),
+                               static_cast<float>(0.5 * drand48())}};
+        } else {
+          h_types[num] = 2;
+          h_materials[num] = {{1.5, 1.0, 1.0, 1.0}};
+        }
+        ++num;
+      }
+    }
+  }
+  h_spheres[num] = {{0.0, 1.0, 0.0, 1.0}};
+  h_types[num] = 2;
+  h_materials[num++] = {{1.5, 1.0, 1.0, 1.0}};
+  h_spheres[num] = {{-4.0, 1.0, 0.0, 1.0}};
+  h_types[num] = 0;
+  h_materials[num++] = {{0.4, 0.2, 0.1, 1.0}};
+  h_spheres[num] = {{4.0, 1.0, 0.0, 1.0}};
+  h_types[num] = 1;
+  h_materials[num++] = {{0.7, 0.6, 0.5, 0.0}};
+
+  n_sphere = num;
+
+  cl_float3 *h_uvs = new cl_float3[kLocalSize];
+  for (int i = 0, end = kLocalSize; i < end; ++i) {
+    cl_float p1 = drand48();
+    cl_float p2 = drand48();
+    cl_float p3 = drand48();
+    while (p1 * p1 + p2 * p2 + p3 * p3 >= 1.0) {
+      p1 = drand48();
+      p2 = drand48();
+      p3 = drand48();
+    }
+    h_uvs[i] = {{p1, p2, p3}};
+  }
 
   size_t sphere_size = n_sphere * sizeof(cl_float4);
+  size_t type_size = n_sphere * sizeof(cl_int);
+  size_t material_attr_size = n_sphere * sizeof(cl_float4);
+  size_t uv_size = sizeof(cl_float3) * kLocalSize;
 
   // create openCL context
   cl_context context = clCreateContext(NULL, 1, &device, NULL, NULL, &status);
@@ -136,31 +206,51 @@ int main(int argc, char **args) {
   }
 
   // allocate device buffer
-  cl_mem d_pixels = clCreateBuffer(context, CL_MEM_READ_ONLY, data_size, NULL, &status);
+  cl_mem d_spheres = clCreateBuffer(context, CL_MEM_READ_ONLY, sphere_size, NULL, &status);
   if (status != CL_SUCCESS) {
     std::cout << "clCreateBuffer(0) failed " << status << std::endl;
     exit(-1);
   }
-  cl_mem d_spheres = clCreateBuffer(context, CL_MEM_READ_ONLY, sphere_size, NULL, &status);
+  cl_mem d_types = clCreateBuffer(context, CL_MEM_READ_ONLY, type_size, NULL, &status);
+  if (status != CL_SUCCESS) {
+    std::cout << "clCreateBuffer(1) failed " << status << std::endl;
+    exit(-1);
+  }
+  cl_mem d_materials = clCreateBuffer(context, CL_MEM_READ_ONLY, material_attr_size, NULL, &status);
   if (status != CL_SUCCESS) {
     std::cout << "clCreateBuffer(2) failed " << status << std::endl;
     exit(-1);
   }
   cl_mem d_results = clCreateBuffer(context, CL_MEM_WRITE_ONLY, data_size, NULL, &status);
   if (status != CL_SUCCESS) {
-    std::cout << "clCreateBuffer(1) failed " << status << std::endl;
+    std::cout << "clCreateBuffer(3) failed " << status << std::endl;
+    exit(-1);
+  }
+  cl_mem d_uvs = clCreateBuffer(context, CL_MEM_READ_ONLY, uv_size, NULL, &status);
+  if (status != CL_SUCCESS) {
+    std::cout << "clCreateBuffer(4) failed " << status << std::endl;
     exit(-1);
   }
 
   // enqueue the command to write the data from the host buffers to the device buffers:
-  status = clEnqueueWriteBuffer(cmd_queue, d_pixels, CL_FALSE, 0, data_size, h_pixels, 0, NULL, NULL);
-  if (status != CL_SUCCESS) {
-    std::cout << "clEnqueueWriteBuffer failed " << status << std::endl;
-    exit(-1);
-  }
   status = clEnqueueWriteBuffer(cmd_queue, d_spheres, CL_FALSE, 0, sphere_size, h_spheres, 0, NULL, NULL);
   if (status != CL_SUCCESS) {
+    std::cout << "clEnqueueWriteBuffer(0) failed " << status << std::endl;
+    exit(-1);
+  }
+  status = clEnqueueWriteBuffer(cmd_queue, d_types, CL_FALSE, 0, type_size, h_types, 0, NULL, NULL);
+  if (status != CL_SUCCESS) {
+    std::cout << "clEnqueueWriteBuffer(1) failed " << status << std::endl;
+    exit(-1);
+  }
+  status = clEnqueueWriteBuffer(cmd_queue, d_materials, CL_FALSE, 0, material_attr_size, h_materials, 0, NULL, NULL);
+  if (status != CL_SUCCESS) {
     std::cout << "clEnqueueWriteBuffer(2) failed " << status << std::endl;
+    exit(-1);
+  }
+  status = clEnqueueWriteBuffer(cmd_queue, d_uvs, CL_FALSE, 0, uv_size, h_uvs, 0, NULL, NULL);
+  if (status != CL_SUCCESS) {
+    std::cout << "clEnqueueWriteBuffer(3) failed " << status << std::endl;
     exit(-1);
   }
 
@@ -206,24 +296,37 @@ int main(int argc, char **args) {
   }
 
   // setup arguments to the kernel object
-  status = clSetKernelArg(kernel, 0, sizeof(cl_mem), &d_pixels);
-  status = clSetKernelArg(kernel, 1, sizeof(cl_mem), &d_results);
-  cl_int2 size = {kCol, kRow};
-  status = clSetKernelArg(kernel, 2, sizeof(cl_int2), &size);
-  Vec3 low_left = {-2.0, -1.0, -1.0};
-  status = clSetKernelArg(kernel, 3, sizeof(cl_float3), &low_left);
-  cl_float3 horizontal = {4.0, 0.0, 0.0};
-  status = clSetKernelArg(kernel, 4, sizeof(cl_float3), &horizontal);
-  cl_float3 vertical = {0.0, 2.0, 0.0};
-  status = clSetKernelArg(kernel, 5, sizeof(cl_float3), &vertical);
-  cl_float3 origin = {0.0, 0.0, 0.0};
-  status = clSetKernelArg(kernel, 6, sizeof(cl_float3), &origin);
-  status = clSetKernelArg(kernel, 7, sizeof(cl_mem), &d_spheres);
-  status = clSetKernelArg(kernel, 8, sizeof(cl_int), &n_sphere);
-  status = clSetKernelArg(kernel, 9, kLocalSize * sizeof(cl_float3), NULL);
-
+  status = clSetKernelArg(kernel, 0, sizeof(cl_mem), &d_results);
+  if (status != CL_SUCCESS) {
+    std::cout << "clSetKernelArg(0) failed " << status << std::endl;
+    exit(-1);
+  }
+  status = clSetKernelArg(kernel, 1, sizeof(cl_mem), &d_spheres);
+  if (status != CL_SUCCESS) {
+    std::cout << "clSetKernelArg(1) failed " << status << std::endl;
+    exit(-1);
+  }
+  status = clSetKernelArg(kernel, 2, sizeof(cl_int), &n_sphere);
+  if (status != CL_SUCCESS) {
+    std::cout << "clSetKernelArg(2) failed " << status << std::endl;
+    exit(-1);
+  }
+  status = clSetKernelArg(kernel, 3, sizeof(cl_mem), &d_types);
   if (status != CL_SUCCESS) {
     std::cout << "clSetKernelArg(3) failed " << status << std::endl;
+    exit(-1);
+  }
+  status = clSetKernelArg(kernel, 4, sizeof(cl_mem), &d_materials);
+  if (status != CL_SUCCESS) {
+    std::cout << "clSetKernelArg(4) failed " << status << std::endl;
+    exit(-1);
+  }
+  status = clSetKernelArg(kernel, 5, sizeof(cl_mem), &d_uvs);
+  // struct Material {cl_int type; cl_float4 attr;};
+  // status = clSetKernelArg(kernel, 10, sizeof(Material) * n_sphere, NULL);
+
+  if (status != CL_SUCCESS) {
+    std::cout << "clSetKernelArg(5) failed " << status << std::endl;
     exit(-1);
   }
   // enqueue the kernel object for execution
@@ -232,7 +335,7 @@ int main(int argc, char **args) {
 
   Wait(cmd_queue);
 
-  status = clEnqueueNDRangeKernel(cmd_queue, kernel, 2, NULL, global_worker_size, local_worker_size, 0, NULL, NULL);
+  status = clEnqueueNDRangeKernel(cmd_queue, kernel, 3, NULL, global_worker_size, NULL, 0, NULL, NULL);
   if (status != CL_SUCCESS) {
     std::cout << "clEnqueueNDRangeKernel failed " << status << std::endl;
     exit(-1);
@@ -250,26 +353,31 @@ int main(int argc, char **args) {
   clReleaseKernel(kernel);
   clReleaseProgram(program);
   clReleaseCommandQueue(cmd_queue);
-  clReleaseMemObject(d_pixels);
   clReleaseMemObject(d_results);
   clReleaseMemObject(d_spheres);
 
-  delete[] h_pixels;
   delete[] h_spheres;
-
   Image image(kCol, kRow);
   int i = 0;
   for (int y = 0; y < kRow; ++y) {
     for (int x = 0; x < kCol; ++x) {
-      float r = h_results[i++];
-      float g = h_results[i++];
-      float b = h_results[i++];
-      image.WritePixel(x, y, r, g, b);
+      float r = 0.0;
+      float g = 0.0;
+      float b = 0.0;
+      for (int s = 0; s < kLocalSize; ++s) {
+        r += h_results[i++];
+        g += h_results[i++];
+        b += h_results[i++];
+      }
+      r /= static_cast<float>(kLocalSize);
+      g /= static_cast<float>(kLocalSize);
+      b /= static_cast<float>(kLocalSize);
+      image.WritePixel(x, y, sqrt(r), sqrt(g), sqrt(b));
+      // image.WritePixel(x, y, r, g, b);
       // std::cout << "(" << x << ", " << y << "): " << r << "," << g << "," << b << " ";
     }
     // std::cout << std::endl;
   }
-
   Write(args[2], image);
 
 #ifdef _OPENMP
