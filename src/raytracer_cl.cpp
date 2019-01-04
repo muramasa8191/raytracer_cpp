@@ -45,8 +45,8 @@ using raytracer::Dielectric;
 
 namespace {
 constexpr char kFilename[] = "cl/raytracer.cl";
-constexpr int kRow = 200;
-constexpr int kCol = 400;
+constexpr int kRow = 100;
+constexpr int kCol = 200;
 constexpr int kLocalSize = 100;
 constexpr int kColorSize = kRow * kCol * kLocalSize * 3;
 const char kOutputDir[] = "output";
@@ -322,8 +322,6 @@ int main(int argc, char **args) {
     exit(-1);
   }
   status = clSetKernelArg(kernel, 5, sizeof(cl_mem), &d_uvs);
-  // struct Material {cl_int type; cl_float4 attr;};
-  // status = clSetKernelArg(kernel, 10, sizeof(Material) * n_sphere, NULL);
 
   if (status != CL_SUCCESS) {
     std::cout << "clSetKernelArg(5) failed " << status << std::endl;
@@ -378,8 +376,6 @@ int main(int argc, char **args) {
     }
     // std::cout << std::endl;
   }
-  Write(args[2], image);
-
 #ifdef _OPENMP
   double end = omp_get_wtime();
   std::cout << "Done! " << (end - start) * 1000.0 << " msec" << std::endl;
@@ -387,6 +383,8 @@ int main(int argc, char **args) {
   clock_t end = clock();
   std::cout << "Done: " << (end - start) / float(CLOCKS_PER_SEC) * 1000.0 << " msec" << std::endl;
 #endif
+
+  Write(args[2], image);
 
   return 0;
 }

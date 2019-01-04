@@ -386,8 +386,6 @@ int main(int argc, char** args) {
 
   std::string filename = ParallelTest(nx, ny, ns, image);
 
-  Write(filename, image);
-
 #ifdef _OPENMP
   double end = omp_get_wtime();
   std::cout << "Done(openMP): " << (end - start) * 1000.0 << " msec" << std::endl;
@@ -395,5 +393,8 @@ int main(int argc, char** args) {
   clock_t end = clock();
   std::cout << "Done: " << (end - start) / float(CLOCKS_PER_SEC) * 1000.0 << " msec" << std::endl;
 #endif
+
+  Write(filename, image);
+
   return 0;
 }
